@@ -35,7 +35,7 @@ oarwalltime 4589901 +7:00
 usagepolicycheck -t
 
 oardel {job-id}
-oarsub -r "2024-05-14 12:00:00" -t exotic -l gpu=1,walltime=18:00:00 -p gemini-2
+oarsub -r "2024-05-22 17:00:00" -t exotic -l gpu=1,walltime=18:00:00 -p gemini-2
 
 
 

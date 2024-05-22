@@ -10,7 +10,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from utils_torch import split_data
+from .utils_torch import split_data
 
 
 class Flickr8kDataset(Dataset):
@@ -20,6 +20,7 @@ class Flickr8kDataset(Dataset):
     """
 
     def __init__(self, dataset_base_path='data/flickr8k/',
+                 image_type="normal",
                  vocab_set=None, dist='val',
                  startseq="<start>", endseq="<end>", unkseq="<unk>", padseq="<pad>",
                  transformations=None,
@@ -30,6 +31,9 @@ class Flickr8kDataset(Dataset):
         
         self.token = dataset_base_path + 'Flickr8k.token.txt'
         self.images_path = dataset_base_path + 'flickr8k_images/'
+
+        if image_type != "normal":
+            self.images_path = dataset_base_path + image_type + '/'
 
         self.dist_list = {
             'train': dataset_base_path + 'Flickr_8k.trainImages.txt',
@@ -164,20 +168,27 @@ class Flickr8kDataset(Dataset):
         imgname = self.db[index][0]
         caption = self.db[index][1]
         capt_ln = self.db[index][2]
+
+        
+
         cap_toks = [self.startseq] + nltk.word_tokenize(caption) + [self.endseq]
+
         img_tens = self.pil_d[imgname] if self.load_img_to_memory else Image.open(
             os.path.join(self.images_path, imgname)).convert('RGB')
         img_tens = self.transformations(img_tens).to(self.device)
+
         cap_tens = self.torch.LongTensor(self.max_len).fill_(self.pad_value)
-        cap_tens[:len(cap_toks)] = self.torch.LongTensor([self.word2idx[word] for word in cap_toks])
+        cap_tens[:len(cap_toks)] = self.torch.LongTensor([self.word2idx.get(word,self.word2idx[self.unkseq]) for word in cap_toks])
         return img_tens, cap_tens, len(cap_toks)
 
     def __getitem__corpus(self, index: int):
         imgname = self.db[index][0]
         cap_wordlist = self.db[index][1]
         cap_lenlist = self.db[index][2]
+
         img_tens = self.pil_d[imgname] if self.load_img_to_memory else Image.open(
             os.path.join(self.images_path, imgname)).convert('RGB')
+        
         img_tens = self.transformations(img_tens).to(self.device)
         return img_tens, cap_wordlist, cap_lenlist
 

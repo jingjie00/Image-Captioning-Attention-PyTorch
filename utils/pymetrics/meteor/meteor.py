@@ -17,7 +17,7 @@ class Meteor:
         self.env['LC_ALL'] = 'en_US.UTF_8'
         self.meteor_cmd = [
             'java', '-jar', '-Xmx2G', METEOR_JAR,
-            '-', '-', '-stdio', '-l', 'en', '-norm'
+            '-', '-', '-stdio', '-l', 'en', '-norm',
         ]
         self.meteor_p = subprocess.Popen(
             self.meteor_cmd,

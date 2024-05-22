@@ -1,4 +1,9 @@
 # %%
+import sys
+import os
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+sys.path.append(parent_dir)
+
 import pickle
 from matplotlib import pyplot as plt
 import tqdm
@@ -7,56 +12,54 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from utils.metrics import bleu_score_fn, accuracy_fn, words_from_tensors_fn
 from utils.flickr8k import Flickr8kDataset
 from utils.glove import embedding_matrix_creator
 from models.torch.densenet201_monolstm import Captioner
 
+from utils.utils_torch import words_from_tensors_fn
+from utils.metrics import accuracy_fn, make_evaluate
 
 
 # %%
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 device
-# %%
-
-DATASET_BASE_PATH = 'data/flickr8k/'
 
 # %%
+DATASET_BASE_PATH = './../datasets/flickr8k/'
 
+
+
+# %%
 train_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='train', device=device,
                             return_type='tensor',
                             load_img_to_memory=False)
-vocab, word2idx, idx2word, max_len = vocab_set = train_set.get_vocab()
-val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val', vocab_set=vocab_set, device=device,
-                          return_type='corpus',
-                          load_img_to_memory=False)
-test_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='test', vocab_set=vocab_set, device=device,
-                           return_type='corpus',
-                           load_img_to_memory=False)
-train_eval_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='train', vocab_set=vocab_set, device=device,
-                                 return_type='corpus',
-                                 load_img_to_memory=False)
 
-with open('vocab_set.pkl', 'wb') as f:
-    pickle.dump(train_set.get_vocab(), f)
-len(train_set), len(val_set), len(test_set)
-
-# %%
+vocab_set = train_set.get_vocab()
+vocab, word2idx, idx2word, max_len = vocab_set
 vocab_size = len(vocab)
 vocab_size, max_len
 
-# %%
+val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val', vocab_set=vocab_set, device=device,
+                          return_type='tensor',
+                          load_img_to_memory=False)
 
+with open('./saved/vocab_set.pkl', 'wb') as f:
+    pickle.dump(train_set.get_vocab(), f)
+len(train_set), len(val_set)
+
+
+
+# %%
 MODEL = "resnet50_monolstm"
 EMBEDDING_DIM = 50
 EMBEDDING = f"GLV{EMBEDDING_DIM}"
 HIDDEN_SIZE = 256
 BATCH_SIZE = 16
 LR = 1e-2
-MODEL_NAME = f'saved_models/{MODEL}_b{BATCH_SIZE}_emd{EMBEDDING}'
-NUM_EPOCHS = 2
+MODEL_NAME = f'./saved/{MODEL}_b{BATCH_SIZE}_emd{EMBEDDING}'
+NUM_EPOCHS = 40
 SAVE_FREQ = 2
-LOG_INTERVAL = 25
+LOG_INTERVAL = 100
 
 # %%
 embedding_matrix = embedding_matrix_creator(embedding_dim=EMBEDDING_DIM, word2idx=word2idx)
@@ -65,12 +68,11 @@ embedding_matrix.shape
 
 # %%
 
-def train_model(train_loader, model, loss_fn, optimizer, vocab_size, acc_fn, desc=''):
+def train_model(train_loader, model, loss_fn, optimizer):
     running_acc = 0.0
     running_loss = 0.0
     model.train()
-    t = tqdm(iter(train_loader), desc=f'{desc}')
-    for batch_idx, batch in enumerate(t):
+    for batch_idx, batch in enumerate(train_loader):
         images, captions, lengths = batch
         sort_ind = torch.argsort(lengths, descending=True)
         images = images[sort_ind]
@@ -89,43 +91,55 @@ def train_model(train_loader, model, loss_fn, optimizer, vocab_size, acc_fn, des
 
         running_acc += (torch.argmax(outputs, dim=1) == targets).sum().float().item() / targets.size(0)
         running_loss += loss.item()
-        t.set_postfix({'loss': running_loss / (batch_idx + 1),
-                       'acc': running_acc / (batch_idx + 1),
-                       }, refresh=True)
+
         if (batch_idx + 1) % LOG_INTERVAL == 0:
-            print(f'{desc} {batch_idx + 1}/{len(train_loader)} '
-                  f'train_loss: {running_loss / (batch_idx + 1):.4f} '
-                  f'train_acc: {running_acc / (batch_idx + 1):.4f}')
+            print(f'Batch {(batch_idx+1)}/{len(train_loader)} \t| train_loss: {running_loss / (batch_idx + 1):.4f} train_acc: {running_acc / (batch_idx + 1):.4f}')
 
     return running_loss / len(train_loader)
 
-def evaluate_model(data_loader, model, loss_fn, vocab_size, bleu_score_fn, tensor_to_word_fn, desc=''):
-    running_bleu = [0.0] * 5
+def validate_model(data_loader, model, loss_fn):
     model.eval()
-    t = tqdm(iter(data_loader), desc=f'{desc}')
-    for batch_idx, batch in enumerate(t):
+    running_acc=0.0
+    running_loss=0.0
+    for batch_idx, batch in enumerate(data_loader):
         images, captions, lengths = batch
-        outputs = tensor_to_word_fn(model.sample(images).cpu().numpy())
+        sort_ind = torch.argsort(lengths, descending=True)
+        images = images[sort_ind]
+        captions = captions[sort_ind]
+        lengths = lengths[sort_ind]
+        outputs = model(images, captions, lengths)
+        
+        targets = pack_padded_sequence(captions, lengths=lengths, batch_first=True, enforce_sorted=True)[0]
+        loss = loss_fn(outputs, targets)
 
-        for i in (1, 2, 3, 4):
-            running_bleu[i] += bleu_score_fn(reference_corpus=captions, candidate_corpus=outputs, n=i)
-        t.set_postfix({
-            'bleu1': running_bleu[1] / (batch_idx + 1),
-            'bleu4': running_bleu[4] / (batch_idx + 1),
-        }, refresh=True)
-    for i in (1, 2, 3, 4):
-        running_bleu[i] /= len(data_loader)
-    return running_bleu
+        running_acc += (torch.argmax(outputs, dim=1) == targets).sum().float().item() / targets.size(0)
+        running_loss += loss.item()
+
+        if (batch_idx + 1) % LOG_INTERVAL == 0:
+            print(f'Batch {(batch_idx+1)}/{len(train_loader)} \t| val_loss: {running_loss / (batch_idx + 1):.4f} val_acc: {running_acc / (batch_idx + 1):.4f}')
+
+        return running_loss / len(data_loader)
 # %%
+def evaluate_model(data_loader, model, idx2word):
+
+    references = []
+    hypotheses = []
+    for batch_idx, batch in enumerate(data_loader):
+        images, captions, lengths = batch
+        captions = [[cap.tolist()] for cap in captions]
+        outputs = model.sample(images).tolist()
+        references.extend(captions)
+        hypotheses.extend(outputs)
+    bleu4 = make_evaluate(references, hypotheses,idx2word)
+    return bleu4
 
 
+# %%
 final_model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
                         embedding_matrix=embedding_matrix, train_embd=False).to(device)
 
 loss_fn = torch.nn.CrossEntropyLoss(ignore_index=train_set.pad_value).to(device)
 acc_fn = accuracy_fn(ignore_value=train_set.pad_value)
-sentence_bleu_score_fn = bleu_score_fn(4, 'sentence')
-corpus_bleu_score_fn = bleu_score_fn(4, 'corpus')
 tensor_to_word_fn = words_from_tensors_fn(idx2word=idx2word)
 
 params = list(final_model.decoder.parameters()) + list(final_model.encoder.embed.parameters()) + list(
@@ -151,55 +165,57 @@ eval_transformations = transforms.Compose([
 
 train_set.transformations = train_transformations
 val_set.transformations = eval_transformations
-test_set.transformations = eval_transformations
-train_eval_set.transformations = eval_transformations
+# %%
+train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, sampler=None, pin_memory=False)
+val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, sampler=None, pin_memory=False)
 
 # %%
 eval_collate_fn = lambda batch: (torch.stack([x[0] for x in batch]), [x[1] for x in batch], [x[2] for x in batch])
-train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, sampler=None, pin_memory=False)
-val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, sampler=None, pin_memory=False,
+evaluate_val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, sampler=None, pin_memory=False,
                         collate_fn=eval_collate_fn)
-test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False, sampler=None, pin_memory=False,
-                         collate_fn=eval_collate_fn)
-train_eval_loader = DataLoader(train_eval_set, batch_size=BATCH_SIZE, shuffle=False, sampler=None, pin_memory=False,
-                               collate_fn=eval_collate_fn)
+
+
 # %%
+val_loss_min = 100
 train_loss_min = 100
 val_bleu4_max = 0.0
 for epoch in range(NUM_EPOCHS):
-    train_loss = train_model(desc=f'Epoch {epoch + 1}/{NUM_EPOCHS}', model=final_model,
-                             optimizer=optimizer, loss_fn=loss_fn, acc_fn=acc_fn,
-                             train_loader=train_loader, vocab_size=vocab_size)
+    print(f'Epoch {epoch + 1}/{NUM_EPOCHS}')
+    train_loss = train_model(model=final_model,
+                             optimizer=optimizer, loss_fn=loss_fn, 
+                             train_loader=train_loader)
     with torch.no_grad():
-        train_bleu = evaluate_model(desc=f'\tTrain Bleu Score: ', model=final_model,
-                                    loss_fn=loss_fn, bleu_score_fn=corpus_bleu_score_fn,
-                                    tensor_to_word_fn=tensor_to_word_fn,
-                                    data_loader=train_eval_loader, vocab_size=vocab_size)
-        val_bleu = evaluate_model(desc=f'\tValidation Bleu Score: ', model=final_model,
-                                  loss_fn=loss_fn, bleu_score_fn=corpus_bleu_score_fn,
-                                  tensor_to_word_fn=tensor_to_word_fn,
-                                  data_loader=val_loader, vocab_size=vocab_size)
-        print(f'Epoch {epoch + 1}/{NUM_EPOCHS}',
-              ''.join([f'train_bleu{i}: {train_bleu[i]:.4f} ' for i in (1, 4)]),
-              ''.join([f'val_bleu{i}: {val_bleu[i]:.4f} ' for i in (1, 4)]),
-              )
+        val_loss = validate_model(model=final_model, 
+                                  loss_fn=loss_fn, 
+                                  data_loader=val_loader)
+        
+        val_bleu4 = evaluate_model(model=final_model,
+                                  idx2word = idx2word,
+                                  data_loader=evaluate_val_loader)
+  
         state = {
             'epoch': epoch + 1,
+            'embed_size': EMBEDDING_DIM,
+            'hidden_size': HIDDEN_SIZE,
+            'vocab_size': vocab_size,
             'state_dict': final_model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'train_loss_latest': train_loss,
-            'val_bleu4_latest': val_bleu[4],
+            'val_loss_latest': val_loss,
+            'val_bleu4_latest': val_bleu4,
             'train_loss_min': min(train_loss, train_loss_min),
-            'val_bleu4_max': max(val_bleu[4], val_bleu4_max),
-            'train_bleus': train_bleu,
-            'val_bleus': val_bleu,
+            'val_loss_min': min(val_loss, val_loss_min),
+            'val_bleu4_max': max(val_bleu4, val_bleu4_max)
         }
         torch.save(state, f'{MODEL_NAME}_latest.pt')
         if train_loss < train_loss_min:
             train_loss_min = train_loss
-            torch.save(state, f'{MODEL_NAME}''_best_train.pt')
-        if val_bleu[4] > val_bleu4_max:
-            val_bleu4_max = val_bleu[4]
-            torch.save(state, f'{MODEL_NAME}''_best_val.pt')
+            torch.save(state, f'{MODEL_NAME}''_best_train_loss.pt')
+        if val_bleu4 > val_loss:
+            val_loss = val_bleu4
+            torch.save(state, f'{MODEL_NAME}''_best_val_loss.pt')
+        if val_bleu4 > val_bleu4_max:
+            val_bleu4_max = val_bleu4
+            torch.save(state, f'{MODEL_NAME}''_best_val_bleu4.pt')
 
 torch.save(state, f'{MODEL_NAME}_ep{NUM_EPOCHS:02d}_weights.pt')

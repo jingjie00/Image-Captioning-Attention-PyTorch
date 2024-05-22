@@ -17,7 +17,7 @@ def glove_dictionary(GLOVE_DIR, dim=200):
     return embeddings_index
 
 
-def embedding_matrix_creator(embedding_dim, word2idx, GLOVE_DIR='data/glove.6B/'):
+def embedding_matrix_creator(embedding_dim, word2idx, GLOVE_DIR='./../models/glove.6B/'):
     embeddings_index = glove_dictionary(GLOVE_DIR=GLOVE_DIR, dim=embedding_dim)
     embedding_matrix = np.zeros((len(word2idx), embedding_dim))
     for word, i in tqdm(word2idx.items()):
