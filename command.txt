@@ -1,0 +1,49 @@
+V09042024
+
+git config --global user.email "2000tanjingjie@gmail.com"
+git config --global user.name "Jing Jie"
+
+# Start working on (Init) {source} {dest}
+rsync -a --delete /Users/jingjietan/Desktop/imagecap/ jtan@lyon.grid5000.fr:/home/jtan/imagecap/
+rsync -a --delete jtan@lyon.grid5000.fr:/home/jtan/imagecap/ /Users/jingjietan/Desktop/imagecap/
+
+# Save working to GitHub
+git commit -a
+:wq!
+git push
+
+rm .git/index.lock
+
+# requirement.txt
+pip freeze > requirements.txt
+pip install nltk sacrebleu rouge meteor-python cider
+
+
+# Sync from GitHub
+git pull --rebase origin main
+
+# Get GPU
+oarsub -l gpu=1,walltime=8:00:00 -I -t exotic
+oarsub -q default -l "walltime=1:00:00" -t exotic /home/jtan/imgcap/exec.sh
+
+oarstat -u
+oarwalltime {job-id}
+oarwalltime {job-id} {+x:00}
+oarwalltime 4589901 +7:00
+
+# reserve
+usagepolicycheck -t
+
+oardel {job-id}
+oarsub -r "2024-05-24 19:00:00" -t exotic -l gpu=6,walltime=70:00:00 -p gemini
+
+oarsub -r "2024-05-24 19:00:00" -t exotic -l nodes=2,walltime=62:00:00 -p gemini
+
+
+{ echo "$(date)"; python 03_network_training.py; echo; } | tee -a log.txt
+
+
+tmux new -s {att}
+tmux attach -t {att}
+
+oarsh gemini-1
