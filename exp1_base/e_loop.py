@@ -18,9 +18,8 @@ from models.torch.densenet201_monolstm import Captioner
 
 from utils.utils_torch import words_from_tensors_fn
 from utils.metrics import accuracy_fn, make_evaluate
-
 # %%
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 device
 
 # %%
@@ -38,22 +37,23 @@ eval_transformations = transforms.Compose([
 vocab_set = pickle.load(open('./saved/vocab_set.pkl', 'rb'))
 vocab, word2idx, idx2word, max_len = vocab_set
 vocab_size = len(vocab)
-
+tensor_to_word_fn = words_from_tensors_fn(idx2word=idx2word)
 
 
 
 # %%
-def evaluate_model(data_loader, model, idx2word):
+def evaluate_model(data_loader, model, idx2word,word2idx):
 
     references = []
     hypotheses = []
     for batch_idx, batch in enumerate(data_loader):
         images, captions, lengths = batch
-        captions = [[cap.tolist()] for cap in captions]
-        outputs = model.sample(images).tolist()
+        outputs = tensor_to_word_fn(model.sample(images,word2idx['<start>']).cpu().numpy())
+        captions = tensor_to_word_fn(torch.stack(captions).cpu().numpy())
+        captions = [[cap] for cap in captions]
         references.extend(captions)
         hypotheses.extend(outputs)
-    bleu4 = make_evaluate(references, hypotheses,idx2word)
+    bleu4 = make_evaluate(references, hypotheses,idx2word,word2idx)
     return bleu4
 
 
@@ -71,7 +71,7 @@ embedding_matrix.shape
 # %%
 model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
                         embedding_matrix=embedding_matrix, train_embd=False).to(device)
-checkpoint = torch.load(f'{MODEL_NAME}_latest.pt')
+checkpoint = torch.load(f'{MODEL_NAME}_best_val_bleu4.pt')
 model.load_state_dict(checkpoint['state_dict'])
 
 
@@ -91,6 +91,6 @@ for IMAGE_TYPE in ['flickr8k_images','R0.5S50','R0.5S1','R0.2S50','R0.2S1','R0.1
         model.eval()
         eval_bleu = evaluate_model(data_loader=eval_loader,
                                       model=model,
-                                      idx2word = idx2word)
+                                      idx2word = idx2word, word2idx = word2idx)
         print(f'BLEU-4 {IMAGE_TYPE}: {eval_bleu}')
     print("========================================\n\n\n")

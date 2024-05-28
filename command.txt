@@ -23,7 +23,7 @@ pip install nltk sacrebleu rouge meteor-python cider
 git pull --rebase origin main
 
 # Get GPU
-oarsub -l gpu=1,walltime=8:00:00 -I -t exotic
+oarsub -l gpu=2,walltime=8:00:00 -I -t exotic
 oarsub -q default -l "walltime=1:00:00" -t exotic /home/jtan/imgcap/exec.sh
 
 oarstat -u
@@ -35,7 +35,7 @@ oarwalltime 4589901 +7:00
 usagepolicycheck -t
 
 oardel {job-id}
-oarsub -r "2024-05-24 19:00:00" -t exotic -l gpu=6,walltime=70:00:00 -p gemini
+oarsub -r "2024-05-28 19:00:00" -t exotic -l gpu=1,walltime=14:00:00 -p gemini
 
 oarsub -r "2024-05-24 19:00:00" -t exotic -l nodes=2,walltime=62:00:00 -p gemini
 

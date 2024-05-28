@@ -28,7 +28,7 @@ DATASET_BASE_PATH = './../datasets/flickr8k/'
 
 train_transformations = transforms.Compose([
     transforms.Resize(256),  # smaller edge of image resized to 256
-    transforms.RandomCrop(256), 
+    transforms.RandomCrop(224), 
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.ToTensor(),  # convert the PIL Image to a tensor
     transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
@@ -36,7 +36,7 @@ train_transformations = transforms.Compose([
 ])
 eval_transformations = transforms.Compose([
     transforms.Resize(256),  # smaller edge of image resized to 256
-    transforms.RandomCrop(256), 
+    transforms.RandomCrop(224), 
     transforms.ToTensor(),  # convert the PIL Image to a tensor
     transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
                          (0.229, 0.224, 0.225))
@@ -44,10 +44,10 @@ eval_transformations = transforms.Compose([
 
 # %%
 MODEL = "resnet101_attention"
-EMBEDDING_DIM = 50
+EMBEDDING_DIM = 300
 EMBEDDING = f"GLV{EMBEDDING_DIM}"
 HIDDEN_SIZE = 256
-BATCH_SIZE = 16
+BATCH_SIZE = 128
 LR = 1e-2
 ATTENTION_DIM = 256
 DECODER_SIZE = 256
@@ -231,8 +231,8 @@ for epoch in range(NUM_EPOCHS):
             'val_loss_min': min(val_loss, val_loss_min),
             'val_bleu4_max': max(val_bleu4, val_bleu4_max)
         }
-        if val_bleu4 > val_loss:
-            val_loss = val_bleu4
+        if val_loss_min > val_loss:
+            val_loss = val_loss_min
             torch.save(state, f'{MODEL_NAME}''_best_val_loss.pt')
         if val_bleu4 > val_bleu4_max:
             val_bleu4_max = val_bleu4

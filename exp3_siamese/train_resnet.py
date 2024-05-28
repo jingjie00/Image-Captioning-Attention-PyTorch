@@ -6,7 +6,6 @@ sys.path.append(parent_dir)
 
 import pickle
 from matplotlib import pyplot as plt
-import tqdm
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.utils.data import DataLoader
@@ -14,47 +13,56 @@ from torchvision import transforms
 
 from utils.flickr8k import Flickr8kDataset
 from utils.glove import embedding_matrix_creator
+from models.siamese.resnet50_monolstm import Captioner
 
 from utils.utils_torch import words_from_tensors_fn
 from utils.metrics import accuracy_fn, make_evaluate
 
 
-from models.torch.resnet101_attention import Captioner
 # %%
-device = torch.device('cuda:5' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
+device
+
+# %%
 DATASET_BASE_PATH = './../datasets/flickr8k/'
 
-# %%
 
-train_transformations = transforms.Compose([
-    transforms.Resize(256),  # smaller edge of image resized to 256
-    transforms.RandomCrop(256), 
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.ToTensor(),  # convert the PIL Image to a tensor
-    transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
-                         (0.229, 0.224, 0.225))
-])
-eval_transformations = transforms.Compose([
-    transforms.Resize(256),  # smaller edge of image resized to 256
-    transforms.RandomCrop(256), 
-    transforms.ToTensor(),  # convert the PIL Image to a tensor
-    transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
-                         (0.229, 0.224, 0.225))
-])
 
 # %%
-MODEL = "resnet101_attention"
+train_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH,image_type="R0.1S1", dist='train', device=device,
+                            return_type='tensor',
+                            load_img_to_memory=False)
+
+vocab_set = train_set.get_vocab()
+vocab, word2idx, idx2word, max_len = vocab_set
+vocab_size = len(vocab)
+vocab_size, max_len
+
+val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val',image_type="R0.1S1", vocab_set=vocab_set, device=device,
+                          return_type='tensor',
+                          load_img_to_memory=False)
+
+with open('./saved/vocab_set.pkl', 'wb') as f:
+    pickle.dump(train_set.get_vocab(), f)
+len(train_set), len(val_set)
+
+
+
+# %%
+MODEL = "resnet50_monolstm"
 EMBEDDING_DIM = 50
 EMBEDDING = f"GLV{EMBEDDING_DIM}"
 HIDDEN_SIZE = 256
 BATCH_SIZE = 16
 LR = 1e-2
-ATTENTION_DIM = 256
-DECODER_SIZE = 256
-MODEL_NAME = f'./saved/{MODEL}_b{BATCH_SIZE}_emd{EMBEDDING}_att{ATTENTION_DIM}dec{DECODER_SIZE}'
+MODEL_NAME = f'./saved/{MODEL}_b{BATCH_SIZE}_emd{EMBEDDING}'
 NUM_EPOCHS = 50
+SAVE_FREQ = 2
 LOG_INTERVAL = 100
 
+# %%
+embedding_matrix = embedding_matrix_creator(embedding_dim=EMBEDDING_DIM, word2idx=word2idx)
+embedding_matrix.shape
 
 
 # %%
@@ -71,17 +79,16 @@ def train_model(train_loader, model, loss_fn, optimizer):
         lengths = lengths[sort_ind]
 
         optimizer.zero_grad()
-        scores, caps_sorted, decode_lengths, alphas, sort_ind = model(images, captions, lengths)
-        targets = caps_sorted[:, 1:]
+        # [sum_len, vocab_size]
+        outputs = model(images, captions, lengths)
+        # [b, max_len] -> [sum_len]
+        targets = pack_padded_sequence(captions, lengths=lengths, batch_first=True, enforce_sorted=True)[0]
 
-        scores = pack_padded_sequence(scores, decode_lengths, batch_first=True)[0]
-        targets = pack_padded_sequence(targets, decode_lengths, batch_first=True)[0]
-
-        loss = loss_fn(scores, targets)
+        loss = loss_fn(outputs, targets)
         loss.backward()
         optimizer.step()
 
-        running_acc += (torch.argmax(scores, dim=1) == targets).sum().float().item() / targets.size(0)
+        running_acc += (torch.argmax(outputs, dim=1) == targets).sum().float().item() / targets.size(0)
         running_loss += loss.item()
 
         if (batch_idx + 1) % LOG_INTERVAL == 0:
@@ -99,16 +106,12 @@ def validate_model(data_loader, model, loss_fn):
         images = images[sort_ind]
         captions = captions[sort_ind]
         lengths = lengths[sort_ind]
+        outputs = model(images, captions, lengths)
+        
+        targets = pack_padded_sequence(captions, lengths=lengths, batch_first=True, enforce_sorted=True)[0]
+        loss = loss_fn(outputs, targets)
 
-        scores, caps_sorted, decode_lengths, alphas, sort_ind = model(images, captions, lengths)
-        targets = caps_sorted[:, 1:]
-
-        scores = pack_padded_sequence(scores, decode_lengths, batch_first=True)[0]
-        targets = pack_padded_sequence(targets, decode_lengths, batch_first=True)[0]
-
-        loss = loss_fn(scores, targets)
-
-        running_acc += (torch.argmax(scores, dim=1) == targets).sum().float().item() / targets.size(0)
+        running_acc += (torch.argmax(outputs, dim=1) == targets).sum().float().item() / targets.size(0)
         running_loss += loss.item()
 
         if (batch_idx + 1) % LOG_INTERVAL == 0:
@@ -132,57 +135,39 @@ def evaluate_model(data_loader, model, idx2word, word2idx):
     print("Sample hypotheses:", hypotheses[0],hypotheses[5],hypotheses[10])
     return bleu4
 
-#%%
-def show_sample(model, dset, i):
-    i = 0
-    im, cp, _ = dset[i]
-    model.eval()
-    sampled_caption = model.sample(im.unsqueeze(0), word2idx['<start>'])[0]
-    caption_text = ''.join([idx2word[idx.item()] + ' ' for idx in sampled_caption])
-    print(caption_text)
-    print(dset.get_image_captions(i)[1])
-
-# %%
-train_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH,image_type="R0.1S1", dist='train', device=device,
-                            return_type='tensor',
-                            load_img_to_memory=False)
-
-vocab_set = train_set.get_vocab()
-vocab, word2idx, idx2word, max_len = vocab_set
-vocab_size = len(vocab)
-vocab_size, max_len
-
-val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val',image_type="R0.1S1", vocab_set=vocab_set, device=device,
-                          return_type='tensor',
-                          load_img_to_memory=False)
-
-with open('./saved/vocab_set.pkl', 'wb') as f:
-    pickle.dump(train_set.get_vocab(), f)
-len(train_set), len(val_set)
-
 
 
 # %%
-embedding_matrix = embedding_matrix_creator(embedding_dim=EMBEDDING_DIM, word2idx=word2idx)
-embedding_matrix.shape
+print(os.getcwd())
+state = torch.load('../models/siamese/saved/resnet50_siamese_best_val_loss.pt', map_location='cpu')
+model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
+                        embedding_matrix=embedding_matrix, train_embd=False, encoder_weight=state['state_dict']).to(device)
 
-
-
-# %%
-model = Captioner(encoded_image_size=14, encoder_dim=2048,
-                        attention_dim=ATTENTION_DIM, embed_dim=EMBEDDING_DIM, decoder_dim=DECODER_SIZE,
-                        vocab_size=vocab_size,
-                        embedding_matrix=embedding_matrix, train_embd=False).to(device)
 
 loss_fn = torch.nn.CrossEntropyLoss(ignore_index=train_set.pad_value).to(device)
 acc_fn = accuracy_fn(ignore_value=train_set.pad_value)
 tensor_to_word_fn = words_from_tensors_fn(idx2word=idx2word)
 
-params = model.parameters()
+params = list(model.decoder.parameters()) + list(model.encoder.embed.parameters()) + list(
+    model.encoder.bn.parameters())
 
-optimizer = torch.optim.RMSprop(params=params, lr=LR)
+optimizer = torch.optim.Adam(params=params, lr=LR)
 # %%
-
+train_transformations = transforms.Compose([
+    transforms.Resize(256),  # smaller edge of image resized to 256
+    transforms.RandomCrop(256),  # get 224x224 crop from random location
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.ToTensor(),  # convert the PIL Image to a tensor
+    transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
+                         (0.229, 0.224, 0.225))
+])
+eval_transformations = transforms.Compose([
+    transforms.Resize(256),  # smaller edge of image resized to 256
+    transforms.CenterCrop(256),  # get 224x224 crop from random location
+    transforms.ToTensor(),  # convert the PIL Image to a tensor
+    transforms.Normalize((0.485, 0.456, 0.406),  # normalize image for pre-trained model
+                         (0.229, 0.224, 0.225))
+])
 
 train_set.transformations = train_transformations
 val_set.transformations = eval_transformations
@@ -196,8 +181,17 @@ evaluate_val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, 
                         collate_fn=eval_collate_fn)
 
 
-
+#%%
+def show_sample(model, dset, i):
+    i = 0
+    im, cp, _ = dset[i]
+    model.eval()
+    sampled_caption = model.sample(im.unsqueeze(0))[0]
+    caption_text = ''.join([idx2word[idx.item()] + ' ' for idx in sampled_caption])
+    print(caption_text)
+    print(dset.get_image_captions(i)[1])
 # %%
+print("Start Train")
 val_loss_min = float('inf')
 train_loss_min = float('inf')
 val_bleu4_max = 0.0
@@ -231,8 +225,8 @@ for epoch in range(NUM_EPOCHS):
             'val_loss_min': min(val_loss, val_loss_min),
             'val_bleu4_max': max(val_bleu4, val_bleu4_max)
         }
-        if val_bleu4 > val_loss:
-            val_loss = val_bleu4
+        if val_loss_min > val_loss:
+            val_loss_min = val_loss
             torch.save(state, f'{MODEL_NAME}''_best_val_loss.pt')
         if val_bleu4 > val_bleu4_max:
             val_bleu4_max = val_bleu4

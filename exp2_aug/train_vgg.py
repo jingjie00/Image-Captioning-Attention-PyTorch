@@ -21,7 +21,7 @@ from utils.metrics import accuracy_fn, make_evaluate
 
 
 # %%
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
 device
 
 # %%
@@ -30,7 +30,7 @@ DATASET_BASE_PATH = './../datasets/flickr8k/'
 
 
 # %%
-train_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='train', device=device,
+train_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, image_type="R0.1S1", dist='train', device=device,
                             return_type='tensor',
                             load_img_to_memory=False)
 
@@ -39,7 +39,7 @@ vocab, word2idx, idx2word, max_len = vocab_set
 vocab_size = len(vocab)
 vocab_size, max_len
 
-val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val', vocab_set=vocab_set, device=device,
+val_set = Flickr8kDataset(dataset_base_path=DATASET_BASE_PATH, dist='val',image_type="R0.1S1", vocab_set=vocab_set, device=device,
                           return_type='tensor',
                           load_img_to_memory=False)
 
