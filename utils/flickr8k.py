@@ -32,6 +32,8 @@ class Flickr8kDataset(Dataset):
         self.token = dataset_base_path + 'Flickr8k.token.txt'
         self.images_path = dataset_base_path + 'flickr8k_images/'
 
+        #list count of the directory
+        print("Directory count:",len(os.listdir(self.images_path)))
         if image_type != "normal":
             self.images_path = dataset_base_path + image_type + '/'
 

@@ -19,7 +19,7 @@ from models.torch.densenet201_monolstm import Captioner
 from utils.utils_torch import words_from_tensors_fn
 from utils.metrics import accuracy_fn, make_evaluate
 # %%
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 device
 
 # %%
@@ -71,7 +71,7 @@ embedding_matrix.shape
 # %%
 model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
                         embedding_matrix=embedding_matrix, train_embd=False).to(device)
-checkpoint = torch.load(f'{MODEL_NAME}_best_val_bleu4.pt')
+checkpoint = torch.load(f'{MODEL_NAME}_ep50_weights.pt',map_location="cuda")
 model.load_state_dict(checkpoint['state_dict'])
 
 

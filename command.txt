@@ -35,9 +35,9 @@ oarwalltime 4589901 +7:00
 usagepolicycheck -t
 
 oardel {job-id}
-oarsub -r "2024-05-28 19:00:00" -t exotic -l gpu=1,walltime=14:00:00 -p gemini
+oarsub -r "2024-05-30 19:00:00" -t exotic -l nodes=2,walltime=14:00:00 -p grouille
 
-oarsub -r "2024-05-24 19:00:00" -t exotic -l nodes=2,walltime=62:00:00 -p gemini
+oarsub -r "2024-05-24 19:00:00" -t exotic -l nodes=2,walltime=62:00:00 -p grouille
 
 
 { echo "$(date)"; python 03_network_training.py; echo; } | tee -a log.txt

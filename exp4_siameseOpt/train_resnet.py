@@ -13,7 +13,7 @@ from torchvision import transforms
 
 from utils.flickr8k import Flickr8kDataset
 from utils.glove import embedding_matrix_creator
-from models.siamese.resnet50_monolstm import Captioner
+from siamese.resnet50_monolstm import Captioner
 
 from utils.utils_torch import words_from_tensors_fn
 from utils.metrics import accuracy_fn, make_evaluate
@@ -139,7 +139,7 @@ def evaluate_model(data_loader, model, idx2word, word2idx):
 
 # %%
 print(os.getcwd())
-state = torch.load('../models/siamese/saved/resnet50_siamese_best_val_loss.pt', map_location='cpu')
+state = torch.load('./saved/resnet50_siamese_best_val_loss.pt', map_location='cpu')
 model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
                         embedding_matrix=embedding_matrix, train_embd=False, encoder_weight=state['state_dict']).to(device)
 
