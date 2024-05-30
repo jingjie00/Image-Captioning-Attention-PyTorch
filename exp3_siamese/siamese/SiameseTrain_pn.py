@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
-from SiameseDataset import SiameseDataset
+from SiameseDataset_pn import SiameseDataset
 from SiameseNetwork import SiameseNetwork, ContrastiveLoss, Encoder
 
 from PIL import Image

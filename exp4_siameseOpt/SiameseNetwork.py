@@ -24,18 +24,6 @@ class Encoder(nn.Module):
         features = self.bn(features)
         return features
     
-class SiameseNetwork(nn.Module):
-    def __init__(self, encoder):
-        super(SiameseNetwork, self).__init__()
-        self.encoder = encoder
-        
-    def forward_one(self, x):
-        return self.encoder(x)
-    
-    def forward(self, x1, x2):
-        output1 = self.forward_one(x1)
-        output2 = self.forward_one(x2)
-        return output1, output2
 
 
 # Define the contrastive loss

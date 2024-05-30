@@ -32,21 +32,21 @@ class SiameseDataset(Dataset):
         anchor_path = os.path.join(self.base_dir,res1, self.image_names[idx])
         
         # Select an dimension apart from the anchor
-        self.resolutions_temp = self.resolutions.copy()
-        self.resolutions_temp.remove(res1)
-        res2 = random.choice(self.resolutions_temp)
+        resolutions_temp = self.resolutions.copy()
+        resolutions_temp.remove(res1)
+        res2 = random.choice(resolutions_temp)
 
         if random.random() < 0.5:
             positive_img_name = self.image_names[idx]
             pair_path = os.path.join(self.base_dir,res2, positive_img_name)
-            label = torch.FloatTensor([1])
+            label = torch.FloatTensor([0])
         else:
             negative_idx = random.randint(0, len(self.image_names) - 1)
             while negative_idx == idx:
                 negative_idx = random.randint(0, len(self.image_names) - 1)
             negative_img_name = self.image_names[negative_idx]
             pair_path = os.path.join(self.base_dir, res2, negative_img_name)
-            label = torch.FloatTensor([0])
+            label = torch.FloatTensor([1])
         
         # Load images
         img1 = Image.open(anchor_path).convert('RGB')

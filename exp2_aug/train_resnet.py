@@ -223,8 +223,8 @@ for epoch in range(NUM_EPOCHS):
             'val_loss_min': min(val_loss, val_loss_min),
             'val_bleu4_max': max(val_bleu4, val_bleu4_max)
         }
-        if val_bleu4 > val_loss:
-            val_loss = val_bleu4
+        if val_loss_min > val_loss:
+            val_loss_min = val_loss
             torch.save(state, f'{MODEL_NAME}''_best_val_loss.pt')
         if val_bleu4 > val_bleu4_max:
             val_bleu4_max = val_bleu4

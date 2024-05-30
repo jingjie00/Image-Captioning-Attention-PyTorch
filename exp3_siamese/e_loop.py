@@ -48,7 +48,7 @@ def evaluate_model(data_loader, model, idx2word, word2idx):
     hypotheses = []
     for batch_idx, batch in enumerate(data_loader):
         images, captions, lengths = batch
-        outputs = tensor_to_word_fn(model.sample(images,word2idx['<start>']).cpu().numpy())
+        outputs = tensor_to_word_fn(model.sample(images).cpu().numpy())
         captions = tensor_to_word_fn(torch.stack(captions).cpu().numpy())
         captions = [[cap] for cap in captions]
         references.extend(captions)
@@ -76,7 +76,6 @@ model = Captioner(EMBEDDING_DIM, HIDDEN_SIZE, vocab_size, num_layers=2,
                         embedding_matrix=embedding_matrix, train_embd=False).to(device)
 checkpoint = torch.load(f'{MODEL_NAME}_best_val_loss.pt',map_location="cuda")
 model.load_state_dict(checkpoint['state_dict'])
-
 #'flickr8k_images','R0.5S50','R0.5S1','R0.2S50','R0.2S1','R0.1S50','R0.1S1','R1S1_GF500','R0.5S1_GF500'
 for IMAGE_TYPE in ['flickr8k_images','TEST_R0.01S20','R0.5S50','R0.5S1','R0.2S50','R0.2S1','R0.1S50','R0.1S1','R1S1_GF500','R0.5S1_GF500']:
     print("Evaluating:",IMAGE_TYPE)

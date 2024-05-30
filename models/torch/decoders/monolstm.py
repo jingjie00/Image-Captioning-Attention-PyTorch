@@ -99,4 +99,6 @@ class Decoder(nn.Module):
             # Keep only the top sequences according to their total log probability
             ordered = sorted(all_candidates, key=lambda x: x[1], reverse=True)
             idx_sequences = ordered[:beam_width]
-        return [idx_seq[0] for idx_seq in idx_sequences]
+        #return [idx_seq[0] for idx_seq in idx_sequences]
+        # in torch
+        return torch.tensor(idx_sequences[0][0], dtype=torch.long)
